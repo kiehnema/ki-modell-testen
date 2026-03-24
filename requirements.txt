@@ -1,4 +1,4 @@
-streamlit
-transformers
-torch
-pillow
+streamlit>=1.30.0
+transformers>=4.40.0
+torch>=2.0.0
+pillow>=9.0.0
