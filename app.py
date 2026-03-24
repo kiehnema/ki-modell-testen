@@ -1,41 +1,44 @@
 import streamlit as st
-from transformers import pipeline
 from PIL import Image
+import torch
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-# Titel
 st.title("🌿 Pflanzenkrankheiten Erkennung mit KI")
-st.write("Lade ein Bild einer Pflanze hoch, um mögliche Krankheiten zu erkennen.")
 
-# Modell laden (wird gecached)
 @st.cache_resource
 def load_model():
-    model = pipeline(
-        "image-classification",
-        model="Daksh159/plant-disease-mobilenetv2"
-    )
-    return model
+    model_name = "Daksh159/plant-disease-mobilenetv2"
+    processor = AutoImageProcessor.from_pretrained(model_name)
+    model = AutoModelForImageClassification.from_pretrained(model_name)
+    return processor, model
 
-classifier = load_model()
+processor, model = load_model()
 
-# Labels bereinigen
 def clean_label(label):
     return label.replace("___", " - ").replace("_", " ")
 
-# Datei-Upload
 uploaded_file = st.file_uploader("📷 Bild hochladen", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
+if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, use_column_width=True)
 
-    st.image(image, caption="Hochgeladenes Bild", use_column_width=True)
+    with st.spinner("🔍 Analysiere..."):
+        inputs = processor(images=image, return_tensors="pt")
 
-    with st.spinner("🔍 Analysiere Bild..."):
-        results = classifier(image)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
 
-    st.subheader("📊 Ergebnis (Top 3):")
+        probs = torch.nn.functional.softmax(logits, dim=1)[0]
+        top_k = torch.topk(probs, 3)
 
-    for r in results[:3]:
-        label = clean_label(r["label"])
-        score = r["score"] * 100
-        st.write(f"**{label}** → {score:.2f}%")
-        st.progress(min(score / 100, 1.0))
+    st.subheader("📊 Ergebnis:")
+
+    for i in range(3):
+        idx = top_k.indices[i].item()
+        score = top_k.values[i].item() * 100
+        label = model.config.id2label[idx]
+
+        st.write(f"**{clean_label(label)}** → {score:.2f}%")
+        st.progress(score / 100)
